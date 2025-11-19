@@ -372,15 +372,15 @@ class VideoGenerationService:
             
         except Exception as e:
             logger.error(f"Veo generation failed: {e}")
-            raise
+            logger.info("Falling back to standard text-to-video model...")
             
-            # Use text-to-video model
+            # Use text-to-video model (Fallback)
             loop = asyncio.get_event_loop()
             video = await loop.run_in_executor(
                 None,
                 lambda: self.fallback_client.text_to_video(
                     prompt,
-                    model=model,
+                    model="damo-vilab/text-to-video-ms-1.7b", # Explicit fallback model
                 )
             )
             

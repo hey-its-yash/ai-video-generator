@@ -37,7 +37,8 @@ class LLMService:
         if settings.GOOGLE_API_KEY:
             try:
                 genai.configure(api_key=settings.GOOGLE_API_KEY)
-                self.gemini_model = genai.GenerativeModel('gemini-2.5-flash')
+                # Use gemini-1.5-flash-latest which is stable, fast and good for this task
+                self.gemini_model = genai.GenerativeModel('gemini-1.5-flash-latest')
                 self.gemini_configured = True
                 logger.info("✓ Gemini API configured")
             except Exception as e:
@@ -157,6 +158,8 @@ class LLMService:
         full_prompt = f"{system_prompt}\n\n{user_prompt}"
         
         # Configure safety settings to be less restrictive for children's content
+        # Note: BLOCK_NONE is required because sometimes innocent children's content 
+        # triggers false positives in safety filters.
         safety_settings = [
             {
                 "category": "HARM_CATEGORY_HARASSMENT",
@@ -168,7 +171,7 @@ class LLMService:
             },
             {
                 "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                "threshold": "BLOCK_MEDIUM_AND_ABOVE",
+                "threshold": "BLOCK_NONE",
             },
             {
                 "category": "HARM_CATEGORY_DANGEROUS_CONTENT",

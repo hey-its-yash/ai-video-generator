@@ -45,12 +45,18 @@ async def run_pipeline():
         print(f"   ✗ Initialization failed: {e}")
         return
 
-    # Test Data - Short rhyme to save time/credits
+    # Test Data - Longer rhyme for multi-scene video
     rhyme_text = """
-    Twinkle, twinkle, little star,
-    How I wonder what you are!
-    Up above the world so high,
-    Like a diamond in the sky.
+    The little robot built a ship,
+    To take a very special trip.
+    He flew past stars that shined so bright,
+    And zoomed through space with all his might.
+    He landed on a purple moon,
+    And hummed a happy robot tune.
+    He met a green and friendly guy,
+    Who waved a hand and said goodbye.
+    The robot flew back home to bed,
+    With happy dreams inside his head.
     """
     
     job_id = f"test_job_{int(time.time())}"
@@ -61,13 +67,17 @@ async def run_pipeline():
     # ---------------------------------------------------------
     print("\n[1/4] Generating Scenes (LLM)...")
     try:
-        scene_result = await llm_service.generate_scenes(rhyme_text)
+        # Request more scenes for a longer video
+        scene_result = await llm_service.generate_scenes(
+            rhyme_text, 
+            num_scenes=6  # Increased for longer video test
+        )
         scenes = scene_result.scenes
         
-        # Limit to 2 scenes for testing if LLM generates too many
-        if len(scenes) > 2:
-            print(f"   ℹ Limiting from {len(scenes)} to 2 scenes for testing")
-            scenes = scenes[:2]
+        # Remove the artificial limit for testing
+        # if len(scenes) > 2:
+        #     print(f"   ℹ Limiting from {len(scenes)} to 2 scenes for testing")
+        #     scenes = scenes[:2]
             
         print(f"   ✓ Generated {len(scenes)} scenes:")
         for s in scenes:
@@ -84,6 +94,11 @@ async def run_pipeline():
     
     for i, scene in enumerate(scenes):
         print(f"\n   Processing Scene {scene.scene_number}...")
+        
+        # Add delay to avoid rate limits
+        if i > 0:
+            print("     ⏳ Waiting 5s to respect API rate limits...")
+            time.sleep(5)
         
         # A. Generate Audio
         try:

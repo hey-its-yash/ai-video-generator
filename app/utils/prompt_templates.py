@@ -13,6 +13,7 @@ Key Requirements:
 5. Include motion and action words for animation
 6. Keep narration aligned with the rhyme text
 7. Output MUST be valid JSON format
+8. Ensure descriptions are safe and appropriate for all ages
 
 Style Guidelines:
 - Bright, vibrant colors
