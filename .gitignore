@@ -42,6 +42,11 @@ venv.bak/
 .env.local
 .env.*.local
 
+# Google Cloud Service Account Keys (SENSITIVE!)
+gcp-service-account.json
+*-service-account.json
+*.json.key
+
 # Outputs
 outputs/
 !outputs/.gitkeep

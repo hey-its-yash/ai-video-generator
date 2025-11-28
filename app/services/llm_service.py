@@ -18,9 +18,11 @@ from app.config import settings
 from app.models.schemas import Scene, SceneGenerationResult, LLMProvider
 from app.utils.prompt_templates import (
     get_scene_generation_prompt,
+    get_enhanced_scene_prompt,
     STYLE_DESCRIPTIONS,
     FALLBACK_SCENES_TEMPLATE,
 )
+from app.services.scene_builder import SceneBuilder, build_scenes_from_poem
 
 logger = logging.getLogger(__name__)
 
@@ -37,10 +39,10 @@ class LLMService:
         if settings.GOOGLE_API_KEY:
             try:
                 genai.configure(api_key=settings.GOOGLE_API_KEY)
-                # Use gemini-1.5-flash-latest which is stable, fast and good for this task
-                self.gemini_model = genai.GenerativeModel('gemini-1.5-flash-latest')
+                # Use gemini-2.0-flash which is the stable model
+                self.gemini_model = genai.GenerativeModel('gemini-2.0-flash')
                 self.gemini_configured = True
-                logger.info("✓ Gemini API configured")
+                logger.info("✓ Gemini API configured (using gemini-2.0-flash)")
             except Exception as e:
                 logger.warning(f"Gemini initialization failed: {e}")
         
@@ -346,7 +348,8 @@ class LLMService:
         style: str,
     ) -> SceneGenerationResult:
         """
-        Create basic fallback scenes when LLM fails
+        Create semantically-aware fallback scenes when LLM fails.
+        Uses SceneBuilder for intelligent scene construction.
         
         Args:
             rhyme_text: Original rhyme
@@ -354,44 +357,63 @@ class LLMService:
             style: Visual style
             
         Returns:
-            SceneGenerationResult with basic scenes
+            SceneGenerationResult with refined scenes
         """
-        logger.info("Creating fallback scenes")
+        logger.info("Creating enhanced fallback scenes using SceneBuilder")
         
-        # Split rhyme into lines
+        # Use SceneBuilder for intelligent scene generation
+        scene_builder = SceneBuilder(style=style)
         lines = [line.strip() for line in rhyme_text.split('\n') if line.strip()]
         
+        # Build refined scenes with semantic analysis
+        refined_scenes = scene_builder.build_refined_scenes(lines, num_scenes)
+        
+        # Convert to Scene objects
         scenes = []
-        for i in range(min(num_scenes, len(lines))):
+        for refined in refined_scenes:
             scene = Scene(
-                scene_number=i + 1,
-                description=f"A colorful children's book illustration showing: {lines[i]}",
-                narration=lines[i],
-                duration=5.0,
-                keywords=["colorful", "cheerful", "children's book"],
+                scene_number=refined.scene_number,
+                description=refined.refined_prompt,
+                narration=refined.text_line,
+                duration=refined.duration,
+                keywords=refined.keywords,
             )
             scenes.append(scene)
         
-        # If we need more scenes than lines, duplicate last scene
-        while len(scenes) < num_scenes:
-            last_scene = scenes[-1]
-            scene = Scene(
-                scene_number=len(scenes) + 1,
-                description=f"Continuation of the previous scene with slight variations",
-                narration=last_scene.narration,
-                duration=5.0,
-                keywords=last_scene.keywords,
-            )
-            scenes.append(scene)
+        # Detect title from content
+        overall_theme = scene_builder.detect_theme(rhyme_text)
+        title = self._generate_title_from_theme(rhyme_text, overall_theme)
         
         result = SceneGenerationResult(
-            title="Children's Rhyme",
+            title=title,
             style=STYLE_DESCRIPTIONS.get(style, "children's book illustration"),
             scenes=scenes,
             total_duration=sum(s.duration for s in scenes),
         )
         
+        logger.info(f"Created {len(scenes)} enhanced scenes with semantic alignment")
         return result
+    
+    def _generate_title_from_theme(self, text: str, theme_analysis) -> str:
+        """Generate a title based on the poem content and theme."""
+        # Extract first few significant words
+        words = text.split()[:6]
+        
+        # Common rhyme title patterns
+        if 'twinkle' in text.lower():
+            return "Twinkle Twinkle Little Star"
+        elif 'humpty' in text.lower():
+            return "Humpty Dumpty"
+        elif 'mary' in text.lower() and 'lamb' in text.lower():
+            return "Mary Had a Little Lamb"
+        elif 'jack' in text.lower() and 'jill' in text.lower():
+            return "Jack and Jill"
+        elif 'rain' in text.lower():
+            return "Rain Rain Go Away"
+        else:
+            # Generate from first line
+            first_line = text.split('\n')[0].strip()
+            return first_line[:40] if len(first_line) > 40 else first_line
     
     def get_available_providers(self) -> List[str]:
         """Get list of configured LLM providers"""

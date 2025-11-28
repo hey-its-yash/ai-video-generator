@@ -30,13 +30,23 @@ Rhyme:
 
 Style: {style_description}
 
-Requirements:
-- Each scene should be 4-6 seconds long
-- Visual descriptions should be detailed and specific
-- Include action/motion words (twinkling, jumping, dancing, etc.)
-- Narration should match the rhyme text
-- Maintain consistent characters and style
-- Make it magical and engaging for children
+CRITICAL REQUIREMENTS FOR SEMANTIC ACCURACY:
+1. Each scene MUST accurately represent the MEANING of the poem line
+2. If the poem mentions "star" - show a star. If it mentions "sky" - show sky.
+3. Extract the SUBJECT (star, moon, child, animal), ACTION (twinkle, jump, fly), and SETTING (night, garden, room)
+4. Include specific visual elements: colors, lighting, camera angle, mood
+5. Add motion/action words for animation (sparkling, floating, dancing)
+6. Each scene should be 4-7 seconds based on narration length
+7. Maintain visual CONTINUITY across scenes (same sky color, lighting style)
+
+PROMPT STRUCTURE (follow this for each scene description):
+- SUBJECT: [What/who is the main focus]
+- ACTION: [What is happening]
+- SETTING: [Where - time of day, location, atmosphere]
+- STYLE: [Visual style - colorful, dreamy, whimsical]
+- MOOD: [Emotional tone - peaceful, joyful, magical]
+- CAMERA: [Movement - slow pan up, zoom in, floating]
+- NEGATIVE: [What to avoid - no text, no modern elements]
 
 Output Format (JSON):
 {{
@@ -46,15 +56,24 @@ Output Format (JSON):
   "scenes": [
     {{
       "scene_number": 1,
-      "description": "Detailed visual description for image generation (be specific about colors, composition, lighting, mood)",
-      "narration": "Text to be spoken (taken from the rhyme)",
+      "description": "A [SUBJECT] [ACTION] in [SETTING]. [STYLE]. [MOOD]. [CAMERA]. Negative: no text, no logos, no modern elements.",
+      "narration": "Text to be spoken (exact rhyme text)",
       "duration": 5,
-      "keywords": ["keyword1", "keyword2", "keyword3"]
+      "keywords": ["subject", "action", "setting", "mood"]
     }}
   ]
 }}
 
-Generate exactly {num_scenes} scenes. Be creative and engaging!"""
+EXAMPLE for "Twinkle, twinkle, little star":
+{{
+  "scene_number": 1,
+  "description": "A tiny glowing star twinkles softly with gentle sparkles in the deep blue night sky, surrounded by smaller distant stars and wispy clouds. Soft dreamy watercolor style with warm golden glow. Magical peaceful atmosphere. Slow upward camera pan. Negative: no text, no logos, no buildings, no modern elements.",
+  "narration": "Twinkle, twinkle, little star",
+  "duration": 4.5,
+  "keywords": ["star", "twinkling", "night sky", "magical", "glowing"]
+}}
+
+Generate exactly {num_scenes} scenes with ACCURATE semantic representation!"""
 
 
 STYLE_DESCRIPTIONS = {
@@ -126,6 +145,54 @@ FALLBACK_SCENES_TEMPLATE = """{{
     }}
   ]
 }}"""
+
+
+# Enhanced prompt for video generation with semantic details
+ENHANCED_VIDEO_PROMPT_TEMPLATE = """{subject_description}. {action_description}. Set in {setting_description}. 
+{mood_description}. {style_suffix}. {camera_movement}. 
+Professional quality, highly detailed, cinematic lighting.
+Negative: {negative_prompt}"""
+
+
+def get_enhanced_scene_prompt(
+    scene_description: str,
+    narration: str,
+    style: str = "children_book",
+    keywords: list = None,
+) -> str:
+    """
+    Generate an enhanced video prompt with semantic details.
+    
+    Args:
+        scene_description: Base scene description
+        narration: The narration text (for context)
+        style: Visual style
+        keywords: Scene keywords
+        
+    Returns:
+        Enhanced prompt for video generation
+    """
+    style_suffix = STYLE_DESCRIPTIONS.get(style, STYLE_DESCRIPTIONS["children_book"])
+    
+    # Build enhanced prompt
+    prompt_parts = [scene_description]
+    
+    # Add style
+    prompt_parts.append(style_suffix)
+    
+    # Add motion/animation cues
+    motion_keywords = extract_motion_keywords(scene_description)
+    if motion_keywords:
+        prompt_parts.append(f"Featuring {', '.join(motion_keywords[:3])} motion")
+    
+    # Add quality modifiers
+    prompt_parts.append("Professional animation quality, smooth movement, cinematic lighting")
+    
+    # Add negative prompt
+    negative = "no text, no watermarks, no logos, no modern elements, no distortion"
+    prompt_parts.append(f"Negative: {negative}")
+    
+    return ". ".join(prompt_parts)
 
 
 def get_scene_generation_prompt(

@@ -1,7 +1,7 @@
 """
 Video Generation Service
 Handles image-to-video and text-to-video generation
-Supports: LTX-Video, Stable Video Diffusion, Google Veo 3.1
+Supports: LTX-Video, Stable Video Diffusion, Google Veo 3.1, Replicate
 """
 import os
 import io
@@ -29,6 +29,14 @@ except ImportError:
     VEO_AVAILABLE = False
     logger.warning("Google Veo not available. Install with: pip install google-genai")
 
+# Replicate support
+try:
+    import replicate
+    REPLICATE_AVAILABLE = True
+except ImportError:
+    REPLICATE_AVAILABLE = False
+    logger.warning("Replicate not available. Install with: pip install replicate")
+
 
 class VideoGenerationService:
     """Service for generating videos from images or text"""
@@ -36,6 +44,7 @@ class VideoGenerationService:
     def __init__(self):
         self.hf_token = settings.HUGGINGFACE_TOKEN
         self.google_api_key = settings.GOOGLE_API_KEY
+        self.replicate_token = getattr(settings, 'REPLICATE_API_TOKEN', None)
         
         if not self.hf_token:
             logger.warning("HuggingFace token not configured. Video generation may fail.")
@@ -46,19 +55,38 @@ class VideoGenerationService:
             api_key=self.hf_token,
         )
         
-        # Fallback client for other models
+        # Fallback client (standard HuggingFace)
         self.fallback_client = InferenceClient(
             token=self.hf_token,
         )
         
-        # Initialize Google Veo client
+        # Initialize Google Veo client via Vertex AI
         self.veo_client = None
-        if VEO_AVAILABLE and self.google_api_key:
+        if VEO_AVAILABLE:
             try:
-                self.veo_client = genai.Client(api_key=self.google_api_key)
-                logger.info("✓ Google Veo 3.1 client initialized")
+                # Use Vertex AI with service account
+                creds_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'gcp-service-account.json')
+                if os.path.exists(creds_path):
+                    os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = creds_path
+                    self.veo_client = genai.Client(
+                        vertexai=True,
+                        project='shivam-479213',
+                        location='us-central1'
+                    )
+                    logger.info("✓ Google Veo client initialized via Vertex AI")
+                elif self.google_api_key:
+                    # Fallback to API key
+                    self.veo_client = genai.Client(api_key=self.google_api_key)
+                    logger.info("✓ Google Veo client initialized via API key")
             except Exception as e:
                 logger.warning(f"Failed to initialize Veo client: {e}")
+        
+        # Initialize Replicate client
+        self.replicate_available = False
+        if REPLICATE_AVAILABLE and self.replicate_token and not self.replicate_token.startswith('r8_your'):
+            os.environ['REPLICATE_API_TOKEN'] = self.replicate_token
+            self.replicate_available = True
+            logger.info("✓ Replicate client initialized")
     
     async def generate_video_from_image(
         self,
@@ -128,7 +156,7 @@ class VideoGenerationService:
         duration: int = 5,
     ) -> bytes:
         """
-        Generate video using Lightricks/LTX-Video via fal-ai
+        Generate video using Lightricks/LTX-Video via fal-ai provider
         
         Args:
             image_bytes: Input image as bytes
@@ -146,7 +174,7 @@ class VideoGenerationService:
                 lambda: self.client.image_to_video(
                     image_bytes,
                     prompt=prompt,
-                    model="Lightricks/LTX-Video",
+                    model="Lightricks/LTX-Video-0.9.7-distilled",
                 )
             )
             
@@ -177,6 +205,59 @@ class VideoGenerationService:
             
         except Exception as e:
             logger.error(f"LTX-Video generation failed: {e}")
+            raise
+    
+    async def _generate_with_ltx_text(
+        self,
+        prompt: str,
+        duration: int = 5,
+    ) -> bytes:
+        """
+        Generate video from text using LTX-Video via fal-ai provider
+        
+        Args:
+            prompt: Text description of the video
+            duration: Video duration in seconds
+            
+        Returns:
+            Video bytes
+        """
+        try:
+            logger.info("Using LTX-Video (fal-ai) for text-to-video generation")
+            
+            # Calculate frames based on duration (25 fps)
+            num_frames = min(duration * 25, 49)  # Max 49 frames for quality
+            
+            loop = asyncio.get_event_loop()
+            video = await loop.run_in_executor(
+                None,
+                lambda: self.client.text_to_video(
+                    prompt,
+                    model="Lightricks/LTX-Video-0.9.7-distilled",
+                )
+            )
+            
+            # Handle response
+            if isinstance(video, bytes):
+                return video
+            
+            if hasattr(video, 'read'):
+                return video.read()
+            
+            if isinstance(video, str):
+                if video.startswith('http'):
+                    async with httpx.AsyncClient() as client:
+                        response = await client.get(video)
+                        response.raise_for_status()
+                        return response.content
+                else:
+                    with open(video, 'rb') as f:
+                        return f.read()
+            
+            raise ValueError(f"Unexpected video type: {type(video)}")
+            
+        except Exception as e:
+            logger.error(f"LTX-Video text-to-video failed: {e}")
             raise
     
     async def _generate_with_svd(
@@ -234,7 +315,7 @@ class VideoGenerationService:
         self,
         prompt: str,
         duration: int = 5,
-        model: str = "veo",  # veo, modelscope, or specific model name
+        model: str = "veo",  # veo (primary), replicate, ltx
     ) -> bytes:
         """
         Generate video directly from text prompt
@@ -242,7 +323,7 @@ class VideoGenerationService:
         Args:
             prompt: Text description of the video
             duration: Video duration in seconds
-            model: Text-to-video model to use (veo, modelscope, etc.)
+            model: Text-to-video model to use (veo, replicate, ltx)
             
         Returns:
             Video bytes
@@ -251,19 +332,29 @@ class VideoGenerationService:
             logger.info(f"Generating video from text using {model}")
             logger.info(f"Prompt: {prompt}")
             
-            # Try Google Veo 3.1 first (best quality)
-            if model == "veo" or model == "veo-3.1":
-                if self.veo_client:
-                    try:
-                        return await self._generate_with_veo(prompt, duration)
-                    except Exception as veo_error:
-                        logger.warning(f"Veo failed, falling back to HuggingFace: {veo_error}")
-                        # Continue to fallback
-                else:
-                    logger.warning("Veo not available, falling back to HuggingFace")
+            # Try Google Veo first (best quality, via Vertex AI)
+            if model == "veo" and self.veo_client:
+                try:
+                    return await self._generate_with_veo(prompt, duration)
+                except Exception as veo_error:
+                    logger.warning(f"Veo failed: {veo_error}")
             
-            # Fallback to HuggingFace models
-            model_name = model if model not in ["veo", "modelscope"] else "damo-vilab/text-to-video-ms-1.7b"
+            # Try Replicate as fallback
+            if self.replicate_available:
+                try:
+                    return await self._generate_with_replicate(prompt, duration)
+                except Exception as rep_error:
+                    logger.warning(f"Replicate failed: {rep_error}")
+            
+            # Try LTX-Video (via fal-ai provider)
+            if model in ["ltx", "ltx-video"]:
+                try:
+                    return await self._generate_with_ltx_text(prompt, duration)
+                except Exception as ltx_error:
+                    logger.warning(f"LTX-Video failed: {ltx_error}")
+            
+            # Final fallback to standard HuggingFace models
+            model_name = "damo-vilab/text-to-video-ms-1.7b"
             
             # Use text-to-video model
             loop = asyncio.get_event_loop()
@@ -298,13 +389,13 @@ class VideoGenerationService:
             logger.error(f"Text-to-video generation failed: {e}")
             raise
     
-    async def _generate_with_veo(
+    async def _generate_with_replicate(
         self,
         prompt: str,
         duration: int = 5,
     ) -> bytes:
         """
-        Generate video using Google Veo 3.1
+        Generate video using Replicate (minimax/video-01)
         
         Args:
             prompt: Text description
@@ -314,17 +405,72 @@ class VideoGenerationService:
             Video bytes
         """
         try:
-            logger.info("Using Google Veo 3.1 for text-to-video generation")
+            if not REPLICATE_AVAILABLE:
+                raise ValueError("Replicate not installed")
+            
+            if not self.replicate_available:
+                raise ValueError("Replicate token not configured")
+            
+            logger.info("Using Replicate for text-to-video generation")
+            
+            loop = asyncio.get_event_loop()
+            
+            # Use minimax/video-01 model (good quality, reasonable cost)
+            output = await loop.run_in_executor(
+                None,
+                lambda: replicate.run(
+                    "minimax/video-01",
+                    input={
+                        "prompt": prompt,
+                        "prompt_optimizer": True,
+                    }
+                )
+            )
+            
+            # Download the video
+            if isinstance(output, str) and output.startswith('http'):
+                async with httpx.AsyncClient(timeout=120.0) as client:
+                    response = await client.get(output)
+                    response.raise_for_status()
+                    return response.content
+            elif isinstance(output, bytes):
+                return output
+            else:
+                raise ValueError(f"Unexpected output type: {type(output)}")
+                
+        except Exception as e:
+            logger.error(f"Replicate generation failed: {e}")
+            raise
+    
+    async def _generate_with_veo(
+        self,
+        prompt: str,
+        duration: int = 5,
+    ) -> bytes:
+        """
+        Generate video using Google Veo 2.0 via Vertex AI
+        
+        Args:
+            prompt: Text description
+            duration: Video duration in seconds
+            
+        Returns:
+            Video bytes
+        """
+        try:
+            logger.info("Using Google Veo 2.0 for text-to-video generation")
             
             # Start video generation operation
             loop = asyncio.get_event_loop()
             operation = await loop.run_in_executor(
                 None,
                 lambda: self.veo_client.models.generate_videos(
-                    model="veo-3.1-generate-preview",
+                    model="veo-2.0-generate-001",
                     prompt=prompt,
                 )
             )
+            
+            logger.info(f"Veo operation started: {operation.name}")
             
             # Poll until complete (with timeout)
             max_wait_time = 300  # 5 minutes max
@@ -347,28 +493,13 @@ class VideoGenerationService:
             # Get generated video
             generated_video = operation.response.generated_videos[0]
             
-            # Download video bytes
-            video_file = await loop.run_in_executor(
-                None,
-                lambda: self.veo_client.files.download(file=generated_video.video)
-            )
-            
-            # Read bytes
-            if hasattr(video_file, 'read'):
-                return video_file.read()
-            elif isinstance(video_file, bytes):
-                return video_file
+            # Get video bytes directly
+            if hasattr(generated_video.video, 'video_bytes'):
+                return generated_video.video.video_bytes
+            elif hasattr(generated_video, 'video_bytes'):
+                return generated_video.video_bytes
             else:
-                # Save to temp and read
-                temp_path = settings.TEMP_DIR / f"veo_temp_{int(time.time())}.mp4"
-                await loop.run_in_executor(
-                    None,
-                    lambda: generated_video.video.save(str(temp_path))
-                )
-                with open(temp_path, 'rb') as f:
-                    video_bytes = f.read()
-                temp_path.unlink()  # Clean up
-                return video_bytes
+                raise ValueError(f"Could not extract video bytes from response")
             
         except Exception as e:
             logger.error(f"Veo generation failed: {e}")
