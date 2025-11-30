@@ -1,0 +1,6 @@
+
+# Ignore API keys
+*.json
+keys/
+.env
+*.key
