@@ -1,0 +1,67 @@
+# Core Web Framework
+fastapi==0.109.2
+uvicorn[standard]==0.27.1
+python-multipart==0.0.9
+
+# UI Framework
+gradio==4.19.2
+
+# AI/ML APIs
+google-generativeai==0.3.2          # Gemini API
+openai==1.12.0                      # OpenAI API
+huggingface-hub==0.20.3             # HuggingFace API
+diffusers==0.26.3                   # Stable Diffusion
+transformers==4.37.2                # HuggingFace Transformers
+accelerate==0.27.2                  # GPU acceleration
+torch==2.2.0                        # PyTorch (for local inference)
+torchvision==0.17.0
+
+# Video Processing
+moviepy==1.0.3                      # Video editing
+imageio==2.34.0                     # Image/video I/O
+imageio-ffmpeg==0.4.9               # FFmpeg wrapper
+Pillow==10.2.0                      # Image processing
+
+# Audio Processing
+gTTS==2.5.1                         # Google Text-to-Speech
+pydub==0.25.1                       # Audio manipulation
+
+# HTTP & Async
+httpx==0.27.0                       # Async HTTP client
+aiohttp==3.9.3                      # Async HTTP
+aiofiles==23.2.1                    # Async file operations
+requests==2.31.0                    # Sync HTTP client
+
+# Environment & Configuration
+python-dotenv==1.0.1                # Environment variables
+pydantic==2.6.1                     # Data validation
+pydantic-settings==2.1.0            # Settings management
+
+# Utilities
+tqdm==4.66.2                        # Progress bars
+tenacity==8.2.3                     # Retry logic
+python-slugify==8.0.4               # String slugification
+uuid==1.30                          # UUID generation
+
+# Data Processing
+numpy==1.26.4                       # Numerical computing
+pandas==2.2.0                       # Data manipulation (optional)
+
+# Caching
+diskcache==5.6.3                    # Disk-based caching
+
+# Testing
+pytest==8.0.1                       # Testing framework
+pytest-asyncio==0.23.5              # Async testing
+pytest-cov==4.1.0                   # Coverage testing
+httpx-sse==0.4.0                    # SSE for testing
+
+# Development
+black==24.2.0                       # Code formatting
+flake8==7.0.0                       # Linting
+mypy==1.8.0                         # Type checking
+ipython==8.21.0                     # Interactive Python
+
+# Optional: Alternative APIs
+replicate==0.25.0                   # Replicate API (optional)
+# anthropic==0.18.1                 # Claude API (optional)
