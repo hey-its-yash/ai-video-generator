@@ -23,7 +23,7 @@ Transform children's rhymes into engaging, colorful videos using AI! This projec
 
 - Python 3.10 or higher
 - 8GB RAM (16GB recommended)
-- 5GB free disk space
+- 5GB free disk storage
 
 ### Installation
 
