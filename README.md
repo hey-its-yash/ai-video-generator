@@ -138,7 +138,7 @@ The lamb was sure to go.
 ### Fast Mode (30-60 seconds)
 - Static images with Ken Burns effects
 - Quickest generation
-- Good for testing
+- Great for testing
 
 ### Animated Mode (2-4 minutes) ⭐ DEFAULT
 - Images animated with **LTX-Video** (Lightricks)
